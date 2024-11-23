@@ -122,6 +122,15 @@ public:
 		}
 	}
 
+	/**
+	 * \brief Initializes/Register actions in "Actions.h".
+	 */
+	void initialize();
+
+	/**
+	 * \brief Executes a single action.
+	 * \param action The action to execute.
+	 */
 	static void executeAction(const std::shared_ptr<Action> &action) {
 		action->execute([](const auto &result) {
 		});
