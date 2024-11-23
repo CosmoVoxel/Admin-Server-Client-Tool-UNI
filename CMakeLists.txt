@@ -6,5 +6,7 @@ set(CMAKE_CXX_STANDARD 26)
 # Define subdirectories for server and client
 add_subdirectory(server)
 add_subdirectory(client)
+add_subdirectory(OSPlaygroundCode)
 
-include_directories(${CMAKE_SOURCE_DIR}/include)
+target_include_directories(client PUBLIC ${CMAKE_SOURCE_DIR}/include)
+

@@ -2,9 +2,7 @@
 project(ServerApp)
 
 # Add the server source file
-add_executable(server server.h server.cpp ../include/data.h)
-
-target_include_directories(server PUBLIC ${CMAKE_SOURCE_DIR}/include)
+add_executable(server server.h server.cpp)
 
 # Link the Winsock library
 target_link_libraries(server ws2_32)
