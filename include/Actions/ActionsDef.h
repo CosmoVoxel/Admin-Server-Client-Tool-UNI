@@ -216,6 +216,7 @@ class ActionManager
         throw std::runtime_error("Unknown action type: " + actionType);
     }
 
-    // We probably need some king of queue to store the actions.
-    std::queue<std::shared_ptr<Action>> actionQueue;
+    // Currently active actions
+    std::vector<std::unique_ptr<Action>> active_actions;
+
 };
