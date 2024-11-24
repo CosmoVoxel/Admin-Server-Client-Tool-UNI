@@ -1,11 +1,16 @@
 #pragma once
-#include <future>
 #include <iostream>
 #include <string>
 #include <typeindex>
-#include <unordered_map>
 #include <utility>
+
+// Data types
 #include <vector>
+#include <queue>
+#include <unordered_map>
+
+// Multithreading
+#include <future>
 
 #include <Actions/ActionTypes.h>
 #include <Sys_utils/IOperatingSystem.h>
@@ -210,4 +215,7 @@ class ActionManager
 
         throw std::runtime_error("Unknown action type: " + actionType);
     }
+
+    // We probably need some king of queue to store the actions.
+    std::queue<std::shared_ptr<Action>> actionQueue;
 };
