@@ -2,7 +2,8 @@
 project(ServerApp)
 
 # Add the server source file
-add_executable(server server.h server.cpp)
+add_executable(server server.h server.cpp
+        run.cpp)
 
 # Link the Winsock library
 target_link_libraries(server ws2_32)
