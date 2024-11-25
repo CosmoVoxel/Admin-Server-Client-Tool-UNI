@@ -25,6 +25,7 @@ public:
 
     void InitializeConnection();
     void TryToConnect();
+    void StartDefaultActions();
     void WaitingForCommands();
     void DoAction(const std::string& data) const;
     void StopConnection();
