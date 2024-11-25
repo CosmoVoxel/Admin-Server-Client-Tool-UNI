@@ -37,6 +37,12 @@ void Client::TryToConnect()
     receiveThread = std::thread(&Client::WaitingForCommands, this);
 }
 
+void Client::StartDefaultActions()
+{
+
+}
+
+// This function will be used for handling messages from the server...
 void Client::WaitingForCommands()
 {
     while (true)
