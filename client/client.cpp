@@ -16,13 +16,7 @@ void Client::InitializeConnection()
 
     serverAddr.sin_family = AF_INET;
     serverAddr.sin_port = htons(PORT);
-    inet_pton(AF_INET, "127.0.0.1", &serverAddr.sin_addr); // Явное задание IP
-
-    for (const auto& actionCreator : actionFactory.actionRegistry | std::views::values)
-    {
-        const auto action = actionCreator();
-        std::cout << action->getName() << "\n";
-    }
+    inet_pton(AF_INET, "127.0.0.1", &serverAddr.sin_addr);
 }
 
 void Client::TryToConnect()
@@ -37,22 +31,21 @@ void Client::TryToConnect()
     receiveThread = std::thread(&Client::WaitingForCommands, this);
 }
 
-void Client::StartDefaultActions()
-{
-
-}
-
 // This function will be used for handling messages from the server...
 void Client::WaitingForCommands()
 {
     while (true)
     {
         int bytesReceived = recv(clientSocket, buffer, BUFFER_SIZE, 0);
-        if (bytesReceived > 0)
+        if (bytesReceived > 0 && std::strlen(buffer) > 0)
         {
             std::string data(buffer, bytesReceived);
+            std::cout << "Client Received: " << data << "\n";
             DoAction(data);
+            ZeroMemory(buffer, BUFFER_SIZE);
+            bytesReceived = 0;
         }
+
         else if (bytesReceived == SOCKET_ERROR)
         {
             std::cerr << "Connection lost.\n";
@@ -61,10 +54,37 @@ void Client::WaitingForCommands()
     }
 }
 
-void Client::DoAction(const std::string &data) const
+// Send data to the server, using the callback function
+void Client::SendingData()
 {
-    const nlohmann::json jsonData = nlohmann::json::parse(data);
-    actionManager.executeActions(jsonData);
+    MSG msg;
+    while (GetMessage(&msg, nullptr, 0, 0))
+    {
+        // Send data to the server
+        TranslateMessage(&msg);
+        DispatchMessage(&msg);
+    }
+}
+
+
+void Client::DoAction(const std::string &data)
+{
+    const nlohmann::json json_data = nlohmann::json::parse(data);
+
+    const json result = actionManager.executeAction(json_data);
+
+    std::string message;
+    if (result.empty())
+    {
+        message = "Error: Invalid action";
+    }
+    else
+    {
+        // Convert result to string
+        message = result.dump();
+    }
+
+    send(clientSocket, message.c_str(), message.size(), 0);
 }
 
 void Client::StopConnection()

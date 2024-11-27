@@ -25,8 +25,7 @@ public:
     void StartServer();
     void EndServer();
     static void HandleClient(SOCKET clientSocket);
-
-    void AdminThread(Server* server) const;
+    void AdminThread(Server* server);
 
 protected:
     std::vector<std::thread> clientThreads;

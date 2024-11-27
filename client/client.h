@@ -1,8 +1,13 @@
 #pragma once
-#include <iostream>
 #include <thread>
-#include <Networking/Networking.h>
-#include <Actions/Actions.cpp>
+
+#include <winsock2.h>
+#include <ws2tcpip.h>
+
+#include <Actions/ActionSystem.h>
+
+#pragma comment(lib, "ws2_32.lib")
+
 
 class Client {
 public:
@@ -25,7 +30,6 @@ public:
 
     void InitializeConnection();
     void TryToConnect();
-    void StartDefaultActions();
     void WaitingForCommands();
     static void SendingData();
     void DoAction(const std::string& data);

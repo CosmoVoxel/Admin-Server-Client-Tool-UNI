@@ -86,10 +86,10 @@ void Server::HandleClient(SOCKET clientSocket)
     while (true)
     {
         char buffer[1024];
-        if (const int bytesReceived = recv(clientSocket, buffer, sizeof(buffer), 0); bytesReceived > 0)
+        const int bytesReceived = recv(clientSocket, buffer, sizeof(buffer), 0);
+        if (bytesReceived > 0)
         {
             std::cout << "Received: " << buffer << "\n";
-            send(clientSocket, buffer, bytesReceived, 0);
         }
         else
         {
@@ -101,7 +101,7 @@ void Server::HandleClient(SOCKET clientSocket)
     std::cout << "Client disconnected.\n";
 }
 
-void Server::AdminThread(Server* server) const
+void Server::AdminThread(Server* server)
 {
     std::string input;
     std::cout << "Admin commands:\n";
@@ -124,7 +124,12 @@ void Server::AdminThread(Server* server) const
         else
         {
             // Send command to all clients
-            send(clientSocket, input.c_str(), input.size(), 0);
+            std::lock_guard<std::mutex> lock(clientThreadsMutex);
+            for (auto& thread : clientThreads)
+            {
+                // Assuming you want to send the command to all clients
+                send(clientSocket, input.c_str(), input.size(), 0);
+            }
         }
     }
 }

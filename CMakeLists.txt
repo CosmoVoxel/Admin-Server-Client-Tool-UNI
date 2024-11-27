@@ -7,6 +7,3 @@ set(CMAKE_CXX_STANDARD 26)
 add_subdirectory(server)
 add_subdirectory(client)
 add_subdirectory(OSPlaygroundCode)
-
-target_include_directories(client PUBLIC ${CMAKE_SOURCE_DIR}/include)
-
