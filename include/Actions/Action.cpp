@@ -34,6 +34,12 @@ public:
     CmdCommand_S command{};
 };
 
+class GetClientStatus final : public Action
+{
+public:
+    void initialize(const json& json) override;
+    void execute(std::function<void(const json&)> callback) override;
+};
 
 //!TODO: Add more actions here. For example, RunCommand, CaptureScreen, etc.
 void ActionManager::RegisterActions() const
