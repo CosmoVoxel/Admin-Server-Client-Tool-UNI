@@ -7,7 +7,8 @@ add_executable(server
         server.cpp
         run.cpp
         ../include/Actions/ActionSystem.cpp
-        ../include/Actions/Action.cpp)
+        ../include/Actions/Action.h
+        ../include/SystemManager/OperatingSystemManager.cpp)
 
 
 #include

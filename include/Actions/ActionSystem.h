@@ -1,6 +1,5 @@
 #pragma once
 #include <iostream>
-#include <string>
 #include <typeindex>
 #include <utility>
 
@@ -8,51 +7,110 @@
 #include <vector>
 #include <unordered_map>
 #include <json/json.hpp>
-#include <Actions/ActionStructures.h>
 
 // Multithreading
 #include <future>
 
+#include "ActionStructures.h"
+
 
 using json = nlohmann::json;
-
 
 class Action
 {
 public:
-    explicit Action(const std::string& name) : class_name(name)
+    explicit Action(const std::string& name, bool requires_data = true)
+        : class_name(name), requires_data_in(requires_data)
     {
-    };
+    }
+
     virtual ~Action() = default;
 
-public:
-    virtual std::string getName()
-    {
-        return class_name;
-    };
-
-    std::string class_name;
+    const std::string& getName() const { return class_name; }
 
     virtual void execute(std::function<void(const json&)> callback) = 0;
 
-    virtual void initialize(const json& json)
-    {
-    };
-
-protected:
-    void SetInputOn()
-    {
-        requires_data_in = true;
-    }
-
-    void SetInputOff()
-    {
-        requires_data_in = false;
-    }
+    virtual void initialize(const json& json) = 0;
+    virtual std::any deserialize(const json& data) = 0;
+    virtual json serialize() = 0;
 
 public:
-    bool requires_data_in = true;
+    bool requires_data_in;
+    std::string class_name;
 };
+
+template <typename OutDataType, typename InDataType = void>
+class BaseAction : public Action
+{
+public:
+    using out_data_type = OutDataType;
+    using in_data_type = InDataType;
+
+    explicit BaseAction(const std::string& name, bool requires_data = true)
+        : Action(name, requires_data)
+    {
+    }
+
+    void execute(std::function<void(const json&)> callback) override
+    {
+        try
+        {
+            OutDataType result = perform();
+            callback(result);
+        }
+        catch (const std::exception& e)
+        {
+            std::cerr << "Error in action '" << class_name << "': " << e.what() << "\n";
+            callback({});
+        }
+    }
+
+    void initialize(const json& json) override
+    {
+        if constexpr (!std::is_void_v<InDataType>)
+        {
+            input_data = json.get<InDataType>();
+        }
+    }
+
+    std::any deserialize(const json& data) override
+    {
+        return data.get<OutDataType>();
+    }
+
+    // Type in field for InDataType
+    json serialize() override
+    {
+        if constexpr (std::is_void_v<InDataType>)
+        {
+            // Return a monostate when InDataType is void (no actual data to serialize)
+            return {};
+        }
+        else
+        {
+            // Handle the case where InDataType is not void
+            InDataType in_data;
+            json j = in_data;
+
+            std::string string;
+            for (auto& [key, value] : j.items())
+            {
+                std::cout << "Enter " << key << ": ";
+                std::getline(std::cin, string);
+                j[key] = string;
+            }
+
+            return j;
+        }
+    }
+
+protected:
+    virtual OutDataType perform() = 0;
+
+    using InputDataType = std::conditional_t<std::is_void_v<InDataType>, std::monostate, InDataType>;
+    InputDataType input_data{};
+};
+
 
 // --- Actions Factory ---
 class ActionFactory
@@ -120,8 +178,5 @@ public:
 private:
     std::shared_ptr<ActionFactory> factory;
 
-
-
     std::vector<std::shared_ptr<Action>> active_actions;
 };
-

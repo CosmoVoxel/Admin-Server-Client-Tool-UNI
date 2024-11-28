@@ -1,5 +1,5 @@
 #include "ActionSystem.h"
-
+#include <Actions/Action.h>
 void ActionManager::executeActions(const nlohmann::json& request)
 {
     for (const auto& action_json : request.at("actions"))
@@ -85,3 +85,11 @@ std::shared_ptr<Action> ActionManager::createActionFromRequest(const nlohmann::j
 
     throw std::runtime_error("Unknown action type: " + actionType);
 }
+
+//!TODO: Add more actions here. For example, RunCommand, CaptureScreen, etc.
+void ActionManager::RegisterActions() const
+{
+    factory->registerAction<RunCommand>();
+    factory->registerAction<GetClientStatus>();
+}
+

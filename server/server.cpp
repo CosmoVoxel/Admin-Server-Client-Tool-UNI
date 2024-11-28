@@ -1,6 +1,12 @@
 #include "server.h"
 
-Server::Server() { std::cout << "Server initialized.\n"; }
+#include <memory>
+
+Server::Server()
+{
+    std::cout << "Server initialized.\n";
+    RegisterActions();
+}
 
 Server::~Server()
 {
@@ -57,7 +63,12 @@ void Server::StartServer()
                 << "\n";
 
             std::lock_guard lock(clientThreadsMutex);
-            clientThreads.emplace_back(HandleClient, clientSocket);
+
+            std::thread clientThreadHandle(&Server::HandleClient, this, clientSocket);
+            std::thread clientThreadUpdate(&Server::UpdateClientStatus, this, clientSocket);
+
+            clientThreads[clientSocket].emplace_back(std::move(clientThreadHandle));
+            clientThreads[clientSocket].emplace_back(std::move(clientThreadUpdate));
         }
     }
 }
@@ -68,11 +79,14 @@ void Server::EndServer()
 
     {
         std::lock_guard lock(clientThreadsMutex);
-        for (auto& thread : clientThreads)
+        for (auto& client_threads : clientThreads | std::views::values)
         {
-            if (thread.joinable())
+            for (auto& thread : client_threads)
             {
-                thread.join();
+                if (thread.joinable())
+                {
+                    thread.join();
+                }
             }
         }
     }
@@ -89,22 +103,111 @@ void Server::HandleClient(SOCKET clientSocket)
         const int bytesReceived = recv(clientSocket, buffer, sizeof(buffer), 0);
         if (bytesReceived > 0)
         {
-            std::cout << "Received: " << buffer << "\n";
-        }
-        else
-        {
-            break;
+            std::string i(buffer, bytesReceived);
+            // Remove the /n /r
+            i.erase(std::ranges::remove_if(i, [](const char c) { return c == '\n' || c == '\r'; }).begin(), i.end());
+
+            std::cout << "Received: " << i << "\n";
+
+            if (json request = json::parse(i); request.contains("result"))
+            {
+                std::cout << "Result:" << request.at("result") << "\n";
+            }
         }
     }
+}
 
-    closesocket(clientSocket);
-    std::cout << "Client disconnected.\n";
+void Server::UpdateClientStatus(const SOCKET clientSocket)
+{
+    while (true)
+    {
+        Request request;
+        // Send actions to the client
+        for (const auto& action : debug_actions)
+        {
+            request.InitializeRequest(action->getName(), json{});
+            send(clientSocket, request.body.c_str(), request.body.size(), 0);
+        }
+
+        int bytes_received = 0;
+        char buffer[1024];
+
+        auto start = std::chrono::steady_clock::now();
+
+        while (true)
+        {
+            bytes_received = recv(clientSocket, buffer, sizeof(buffer), 0);
+            if (bytes_received > 0)
+            {
+                std::cout << "Received: " << buffer << "\n";
+
+                // Parse the response
+                json response = json::parse(buffer);
+                std::string action_name;
+
+                if (response.at("transaction_id") != request.transaction_id)
+                {
+                    std::cout << "Transaction id mismatch. Waiting for the correct response\n";
+                    ZeroMemory(buffer, sizeof(buffer));
+                    continue;
+                }
+                if (response.contains("index"))
+                {
+                    action_name = response.at("index");
+                }
+                else
+                {
+                    std::cout << "No action name found in the response\n";
+                    ZeroMemory(buffer, sizeof(buffer));
+                    continue;
+                }
+
+                // Find the action by name
+                auto action_it = std::ranges::find_if(debug_actions, [&action_name](const auto& act)
+                {
+                    return act->getName() == action_name;
+                });
+
+                if (action_it == debug_actions.end())
+                {
+                    std::cout << "Action not found\n";
+                    ZeroMemory(buffer, sizeof(buffer));
+                    continue;
+                }
+
+
+                auto data = std::any_cast<PCStatus_S_OUT>(action_it->get()->deserialize(response.at("data")));
+
+
+                std::cout << "Client status: " << data.ip << " " << data.mac << " " << data.os << "\n";
+                clientStatuses[clientSocket] = data;
+                ZeroMemory(buffer, sizeof(buffer));
+                break;
+            }
+            auto now = std::chrono::steady_clock::now();
+            if (std::chrono::duration_cast<std::chrono::seconds>(now - start).count() >= 30)
+            {
+                std::cout << "Client did not respond in 30 seconds. Waiting next update\n";
+                ZeroMemory(buffer, sizeof(buffer));
+                break;
+            }
+        }
+
+        std::this_thread::sleep_for(std::chrono::seconds(60)); // 15 minutes
+    }
 }
 
 void Server::AdminThread(Server* server)
 {
     std::string input;
     std::cout << "Admin commands:\n";
+
+    // Print all type od actions
+    for (size_t index = 0; index < client_actions.size(); ++index)
+    {
+        std::cout << index << "." << client_actions[index]->getName() << ".\n";
+    }
+
     std::cout << "exit - stop the server\n";
 
     while (true)
@@ -121,15 +224,32 @@ void Server::AdminThread(Server* server)
                 break;
             }
         }
-        else
+
+        try
         {
-            // Send command to all clients
-            std::lock_guard<std::mutex> lock(clientThreadsMutex);
-            for (auto& thread : clientThreads)
+            const int actionIndex = std::stoi(input);
+            if (actionIndex < 0 || actionIndex >= client_actions.size())
             {
-                // Assuming you want to send the command to all clients
-                send(clientSocket, input.c_str(), input.size(), 0);
+                std::cout << "Invalid command\n";
+                continue;
             }
+
+            // Select the action. Fill in the data(optional)
+            auto data = client_actions[actionIndex]->serialize();
+
+            Request request;
+            request.InitializeRequest(client_actions[actionIndex]->getName(), data);
+
+            std::lock_guard<std::mutex> lock(server->clientThreadsMutex);
+            for (const auto& socket : clientThreads | std::views::keys)
+            {
+                send(socket, request.body.c_str(), static_cast<int>(request.body.size()), 0);
+            }
+        }
+
+        catch (const std::invalid_argument&)
+        {
+            std::cout << "Invalid command\n";
         }
     }
 }
