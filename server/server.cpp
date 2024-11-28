@@ -20,8 +20,8 @@ void Server::StartServer()
         throw std::runtime_error("WSAStartup failed.");
     }
 
-    serverSocket = socket(AF_INET, SOCK_STREAM, 0);
-    if (serverSocket == INVALID_SOCKET)
+    server_socket = socket(AF_INET, SOCK_STREAM, 0);
+    if (server_socket == INVALID_SOCKET)
     {
         WSACleanup();
         throw std::runtime_error("Socket creation failed.");
@@ -31,17 +31,17 @@ void Server::StartServer()
     serverAddr.sin_port = htons(PORT);
     serverAddr.sin_addr.s_addr = INADDR_ANY; // Привязка ко всем доступным IP
 
-    if (bind(serverSocket, reinterpret_cast<sockaddr*>(&serverAddr),
+    if (bind(server_socket, reinterpret_cast<sockaddr*>(&serverAddr),
              sizeof(serverAddr)) == SOCKET_ERROR)
     {
-        closesocket(serverSocket);
+        closesocket(server_socket);
         WSACleanup();
         throw std::runtime_error("Bind failed.");
     }
 
-    if (listen(serverSocket, SOMAXCONN) == SOCKET_ERROR)
+    if (listen(server_socket, SOMAXCONN) == SOCKET_ERROR)
     {
-        closesocket(serverSocket);
+        closesocket(server_socket);
         WSACleanup();
         throw std::runtime_error("Listen failed.");
     }
@@ -49,25 +49,26 @@ void Server::StartServer()
     std::cout << "Server listening on port " << PORT << "...\n";
     isRunning = true;
 
-    std::thread adminThread(&Server::AdminThread, this, this);
+    std::thread admin_thread(&Server::AdminThread, this, this);
 
     while (isRunning)
     {
-        int clientSize = sizeof(clientAddr);
-        clientSocket = accept(
-            serverSocket, reinterpret_cast<sockaddr*>(&clientAddr), &clientSize);
-        if (clientSocket != INVALID_SOCKET)
+        client_socket = accept(
+            server_socket,
+            reinterpret_cast<sockaddr*>(&clientAddr),
+            reinterpret_cast<socklen_t*>(&clientAddr));
+
+        if (client_socket != INVALID_SOCKET)
         {
-            std::cout << "Client connected: " << inet_ntoa(clientAddr.sin_addr)
-                << "\n";
+            std::cout << "Client connected: " << inet_ntoa(clientAddr.sin_addr) << "\n";
 
-            std::lock_guard lock(clientThreadsMutex);
+            ClientThreadData client_thread_data;
+            client_thread_data.client_socket = client_socket;
+            client_thread_data.is_client_connected = true;
 
-            std::thread clientThreadHandle(&Server::HandleClient, this, clientSocket);
-            std::thread clientThreadUpdate(&Server::UpdateClientStatus, this, clientSocket);
-
-            clientThreads[clientSocket].emplace_back(std::move(clientThreadHandle));
-            clientThreads[clientSocket].emplace_back(std::move(clientThreadUpdate));
+            // Insert the client thread
+            std::thread client_thread_handle(&Server::HandleClient, this, client_socket);
+            client_threads.insert(std::make_pair(client_socket, std::make_pair(client_thread_data, std::move(client_thread_handle))));
         }
     }
 }
@@ -76,26 +77,21 @@ void Server::EndServer()
 {
     isRunning = false;
 
+
+    for (auto& [client_socket, client_thread] : client_threads)
     {
-        std::lock_guard lock(clientThreadsMutex);
-        for (auto& client_threads : clientThreads | std::views::values)
-        {
-            for (auto& thread : client_threads)
-            {
-                if (thread.joinable())
-                {
-                    thread.join();
-                }
-            }
-        }
+        client_thread.first.is_client_connected = false;
+        client_thread.second.join();
+        closesocket(client_socket);
     }
 
-    closesocket(serverSocket);
+
+    closesocket(server_socket);
     WSACleanup();
 }
 
 // -----==== Action Management On Server ====-----
-void Server::HandleClient(SOCKET clientSocket)
+void Server::HandleClient(const SOCKET clientSocket)
 {
     while (true)
     {
@@ -114,86 +110,6 @@ void Server::HandleClient(SOCKET clientSocket)
                 std::cout << "Result:" << request.at("result") << "\n";
             }
         }
-    }
-}
-
-void Server::UpdateClientStatus(const SOCKET clientSocket)
-{
-    while (true)
-    {
-        Request request;
-        // Send actions to the client
-        for (const auto& action : action_registry.on_startup_actions)
-        {
-            request.InitializeRequest(action->getName(), json{});
-            send(clientSocket, request.body.c_str(), request.body.size(), 0);
-        }
-
-        int bytes_received = 0;
-        char buffer[1024];
-
-        auto start = std::chrono::steady_clock::now();
-
-        while (true)
-        {
-            bytes_received = recv(clientSocket, buffer, sizeof(buffer), 0);
-            if (bytes_received > 0)
-            {
-                std::cout << "Received: " << buffer << "\n";
-
-                // Parse the response
-                json response = json::parse(buffer);
-                std::string action_name;
-
-                if (response.at("transaction_id") != request.transaction_id)
-                {
-                    std::cout << "Transaction id mismatch. Waiting for the correct response\n";
-                    ZeroMemory(buffer, sizeof(buffer));
-                    continue;
-                }
-                if (response.contains("index"))
-                {
-                    action_name = response.at("index");
-                }
-                else
-                {
-                    std::cout << "No action name found in the response\n";
-                    ZeroMemory(buffer, sizeof(buffer));
-                    continue;
-                }
-
-                // Find the action by name
-                auto action_it = std::ranges::find_if(action_registry.on_startup_actions, [&action_name](const auto& act)
-                {
-                    return act->getName() == action_name;
-                });
-
-                if (action_it == action_registry.on_startup_actions.end())
-                {
-                    std::cout << "Action not found\n";
-                    ZeroMemory(buffer, sizeof(buffer));
-                    continue;
-                }
-
-
-                auto data = std::any_cast<PCStatus_S_OUT>(action_it->get()->deserialize(response.at("data")));
-
-
-                std::cout << "Client status: " << data.ip << " " << data.mac << " " << data.os << "\n";
-                clientStatuses[clientSocket] = data;
-                ZeroMemory(buffer, sizeof(buffer));
-                break;
-            }
-            auto now = std::chrono::steady_clock::now();
-            if (std::chrono::duration_cast<std::chrono::seconds>(now - start).count() >= 30)
-            {
-                std::cout << "Client did not respond in 30 seconds. Waiting next update\n";
-                ZeroMemory(buffer, sizeof(buffer));
-                break;
-            }
-        }
-
-        std::this_thread::sleep_for(std::chrono::seconds(60)); // 15 minutes
     }
 }
 
@@ -226,7 +142,7 @@ void Server::AdminThread(Server* server)
             if (!input.empty() && std::ranges::all_of(input, isdigit))
             {
                 const int actionIndex = std::stoi(input);
-                const ExecuteActionResult result = send_action_to_client(actionIndex,clientSocket);
+                const ExecuteActionResult result = send_action_to_client(actionIndex, client_socket);
 
                 switch (result)
                 {
