@@ -23,7 +23,7 @@ public:
     ~Server();
 
     WSADATA wsaData{};
-    SOCKET serverSocket{}, clientSocket{};
+    SOCKET server_socket{}, client_socket{};
     sockaddr_in serverAddr{}, clientAddr{};
     int PORT = 54000;
     bool isRunning = false;
@@ -40,16 +40,29 @@ public:
     ActionFactory actionFactory;
 
 protected:
-    std::map<SOCKET, std::vector<std::thread>> clientThreads;
     std::thread adminThread;
-    std::mutex clientThreadsMutex;
 
-    std::map<SOCKET, PCStatus_S_OUT> clientStatuses;
-    std::map<SOCKET, std::queue<int>> client_action_queue;
+    struct ClientThreadData
+    {
+        int id;
+        SOCKET client_socket;
+
+        PCStatus_S_OUT status;
+        bool is_client_connected;
+        int last_status_update_time; // UNIX timestamp
+
+        std::queue<int> action_queue;
+
+        void update_status_time()
+        {
+            last_status_update_time = static_cast<int>(std::chrono::system_clock::to_time_t(std::chrono::system_clock::now()));
+        }
+
+    };
+    std::map<SOCKET,std::pair<ClientThreadData, std::thread>> client_threads;
+
 
     using Actions = std::vector<std::shared_ptr<Action>>;
-
-
     static void PrintAllActionsWithIndex(const Actions& actions)
     {
         for (size_t index = 0; index < actions.size(); ++index)
@@ -64,7 +77,6 @@ protected:
         ActionExecuted = 0,
         ActionNotSent = 1
     };
-
     ExecuteActionResult send_action_to_client(const int action_index, const SOCKET client_socket)
     {
         if (action_index < 0 || action_index >= action_registry.client_actions.size())
@@ -90,22 +102,7 @@ protected:
         }
         while (send_result == SOCKET_ERROR);
 
-        client_action_queue[client_socket].push(action_index);
+        client_threads[client_socket].first.action_queue.push(action_index);
         return ExecuteActionResult::ActionExecuted;
     };
-};
-
-struct ClientThreadData
-{
-    int id;
-    int client_socket;
-
-    PCStatus_S_OUT status;
-    bool is_client_connected;
-    int last_status_update_time; // UNIX timestamp
-
-    std::queue<int> action_queue;
-
-    // Actions that will be sent when client will connect
-    std::vector<std::shared_ptr<Action>> startup_actions;
 };
