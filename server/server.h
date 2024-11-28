@@ -2,6 +2,7 @@
 #include <iostream>
 #include <map>
 #include <mutex>
+#include <queue>
 #include <string>
 #include <thread>
 #include <vector>
@@ -40,14 +41,61 @@ public:
     ActionFactory actionFactory;
 
 protected:
-    std::map<SOCKET,std::vector<std::thread>> clientThreads;
+    std::map<SOCKET, std::vector<std::thread>> clientThreads;
     std::thread adminThread;
     std::mutex clientThreadsMutex;
 
-    std::map<SOCKET,PCStatus_S_OUT> clientStatuses;
+    std::map<SOCKET, PCStatus_S_OUT> clientStatuses;
+    std::map<SOCKET, std::queue<int>> client_action_queue;
 
-    std::vector<std::shared_ptr<Action>> debug_actions;
-    std::vector<std::shared_ptr<Action>> client_actions;
+    using Actions = std::vector<std::shared_ptr<Action>>;
+    Actions debug_actions;
+    Actions client_actions;
+
+
+    static void PrintAllActionsWithIndex(const Actions& actions)
+    {
+        for (size_t index = 0; index < actions.size(); ++index)
+        {
+            std::cout << index << ". " << actions[index]->getName() << "\n";
+        }
+    };
+
+    enum ExecuteActionResult
+    {
+        ActionNotFound = -1,
+        ActionExecuted = 0,
+        ActionNotSent = 1
+    };
+
+    ExecuteActionResult send_action_to_client(const int action_index, const SOCKET client_socket)
+    {
+        if (action_index < 0 || action_index >= client_actions.size())
+        {
+            std::cout << "Action not found\n";
+            return ExecuteActionResult::ActionNotFound;
+        }
+
+        Request request;
+        request.InitializeRequest(client_actions[action_index]->getName(), client_actions[action_index]->serialize());
+
+        int send_result = 0;
+        int attempts = 0;
+        do
+        {
+            if (attempts >= 10)
+            {
+                // Exit the loop. The client is not responding. Try again later.
+                return ExecuteActionResult::ActionNotSent;
+            }
+            send_result = send(client_socket, request.body.c_str(), static_cast<int>(request.body.size()), 0);
+            attempts++;
+        }
+        while (send_result == SOCKET_ERROR);
+
+        client_action_queue[client_socket].push(action_index);
+        return ExecuteActionResult::ActionExecuted;
+    };
 };
 
 inline void Server::RegisterActions()
@@ -59,3 +107,12 @@ inline void Server::RegisterActions()
     client_actions.push_back(std::make_shared<RunCommand>());
     client_actions.push_back(std::make_shared<GetClientStatus>());
 }
+
+struct ClientThreadData
+{
+    int id;
+    int client_socket;
+    PCStatus_S_OUT status;
+    int last_status_update_time; // UNIX timestamp
+    std::queue<int> action_queue;
+};

@@ -31,7 +31,6 @@ public:
     void InitializeConnection();
     void TryToConnect();
     void WaitingForCommands();
-    static void SendingData();
     void DoAction(const std::string& data);
     void StopConnection();
 };

@@ -95,6 +95,9 @@ void Server::EndServer()
     WSACleanup();
 }
 
+// -----==== Action Management On Server ====-----
+
+
 void Server::HandleClient(SOCKET clientSocket)
 {
     while (true)
@@ -203,15 +206,11 @@ void Server::AdminThread(Server* server)
     std::cout << "Admin commands:\n";
 
     // Print all type od actions
-    for (size_t index = 0; index < client_actions.size(); ++index)
-    {
-        std::cout << index << "." << client_actions[index]->getName() << ".\n";
-    }
-
-    std::cout << "exit - stop the server\n";
+    PrintAllActionsWithIndex(client_actions);
 
     while (true)
     {
+        std::cout << "Enter action index or 'exit' to stop the server\n";
         std::getline(std::cin, input);
         // EXIT
         if (input == "exit")
@@ -227,23 +226,25 @@ void Server::AdminThread(Server* server)
 
         try
         {
-            const int actionIndex = std::stoi(input);
-            if (actionIndex < 0 || actionIndex >= client_actions.size())
+            if (!input.empty() && std::ranges::all_of(input, isdigit))
             {
-                std::cout << "Invalid command\n";
-                continue;
-            }
+                const int actionIndex = std::stoi(input);
+                const ExecuteActionResult result = send_action_to_client(actionIndex,);
 
-            // Select the action. Fill in the data(optional)
-            auto data = client_actions[actionIndex]->serialize();
-
-            Request request;
-            request.InitializeRequest(client_actions[actionIndex]->getName(), data);
-
-            std::lock_guard<std::mutex> lock(server->clientThreadsMutex);
-            for (const auto& socket : clientThreads | std::views::keys)
-            {
-                send(socket, request.body.c_str(), static_cast<int>(request.body.size()), 0);
+                switch (result)
+                {
+                case ActionExecuted:
+                    std::cout << "Action executed\n";
+                    break;
+                case ActionNotFound:
+                    std::cout << "Action not found\n";
+                    break;
+                case ActionNotSent:
+                    std::cout << "Action not sent\n";
+                    break;
+                default:
+                    break;
+                }
             }
         }
 

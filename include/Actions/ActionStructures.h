@@ -27,7 +27,6 @@ struct CmdResult_S final : public DataStruct
 };
 
 // ----=== PC Status STR ===----
-
 /// \brief Structure representing the status of a PC.
 /// \details Contains information about the PC's IP address, MAC address, and operating system.
 struct PCStatus_S_OUT final : public DataStruct
@@ -43,8 +42,3 @@ struct PCStatus_S_OUT final : public DataStruct
 
     NLOHMANN_DEFINE_TYPE_INTRUSIVE(PCStatus_S_OUT, ip, mac, os);
 };
-
-
-
-
-

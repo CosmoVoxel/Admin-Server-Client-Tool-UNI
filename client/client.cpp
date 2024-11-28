@@ -56,18 +56,6 @@ void Client::WaitingForCommands()
     }
 }
 
-// Send data to the server, using the callback function
-void Client::SendingData()
-{
-    MSG msg;
-    while (GetMessage(&msg, nullptr, 0, 0))
-    {
-        // Send data to the server
-        TranslateMessage(&msg);
-        DispatchMessage(&msg);
-    }
-}
-
 
 void Client::DoAction(const std::string &data)
 {
