@@ -5,7 +5,6 @@
 Server::Server()
 {
     std::cout << "Server initialized.\n";
-    RegisterActions();
 }
 
 Server::~Server()
@@ -96,8 +95,6 @@ void Server::EndServer()
 }
 
 // -----==== Action Management On Server ====-----
-
-
 void Server::HandleClient(SOCKET clientSocket)
 {
     while (true)
@@ -126,7 +123,7 @@ void Server::UpdateClientStatus(const SOCKET clientSocket)
     {
         Request request;
         // Send actions to the client
-        for (const auto& action : debug_actions)
+        for (const auto& action : action_registry.on_startup_actions)
         {
             request.InitializeRequest(action->getName(), json{});
             send(clientSocket, request.body.c_str(), request.body.size(), 0);
@@ -166,12 +163,12 @@ void Server::UpdateClientStatus(const SOCKET clientSocket)
                 }
 
                 // Find the action by name
-                auto action_it = std::ranges::find_if(debug_actions, [&action_name](const auto& act)
+                auto action_it = std::ranges::find_if(action_registry.on_startup_actions, [&action_name](const auto& act)
                 {
                     return act->getName() == action_name;
                 });
 
-                if (action_it == debug_actions.end())
+                if (action_it == action_registry.on_startup_actions.end())
                 {
                     std::cout << "Action not found\n";
                     ZeroMemory(buffer, sizeof(buffer));
@@ -206,7 +203,7 @@ void Server::AdminThread(Server* server)
     std::cout << "Admin commands:\n";
 
     // Print all type od actions
-    PrintAllActionsWithIndex(client_actions);
+    PrintAllActionsWithIndex(action_registry.client_actions);
 
     while (true)
     {
@@ -229,7 +226,7 @@ void Server::AdminThread(Server* server)
             if (!input.empty() && std::ranges::all_of(input, isdigit))
             {
                 const int actionIndex = std::stoi(input);
-                const ExecuteActionResult result = send_action_to_client(actionIndex,);
+                const ExecuteActionResult result = send_action_to_client(actionIndex,clientSocket);
 
                 switch (result)
                 {

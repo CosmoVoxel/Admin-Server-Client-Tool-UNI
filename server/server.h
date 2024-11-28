@@ -36,7 +36,6 @@ public:
     void UpdateClientStatus(SOCKET clientSocket);
     void AdminThread(Server* server);
 
-    void RegisterActions();
 
     ActionFactory actionFactory;
 
@@ -49,8 +48,6 @@ protected:
     std::map<SOCKET, std::queue<int>> client_action_queue;
 
     using Actions = std::vector<std::shared_ptr<Action>>;
-    Actions debug_actions;
-    Actions client_actions;
 
 
     static void PrintAllActionsWithIndex(const Actions& actions)
@@ -70,14 +67,14 @@ protected:
 
     ExecuteActionResult send_action_to_client(const int action_index, const SOCKET client_socket)
     {
-        if (action_index < 0 || action_index >= client_actions.size())
+        if (action_index < 0 || action_index >= action_registry.client_actions.size())
         {
             std::cout << "Action not found\n";
             return ExecuteActionResult::ActionNotFound;
         }
 
         Request request;
-        request.InitializeRequest(client_actions[action_index]->getName(), client_actions[action_index]->serialize());
+        request.InitializeRequest(action_registry.client_actions[action_index]->getName(), action_registry.client_actions[action_index]->serialize());
 
         int send_result = 0;
         int attempts = 0;
@@ -98,21 +95,17 @@ protected:
     };
 };
 
-inline void Server::RegisterActions()
-{
-    // !TODO: Register all DEBUG actions here
-    debug_actions.push_back(std::make_shared<GetClientStatus>());
-
-    // !TODO: Register all CLIENT actions here
-    client_actions.push_back(std::make_shared<RunCommand>());
-    client_actions.push_back(std::make_shared<GetClientStatus>());
-}
-
 struct ClientThreadData
 {
     int id;
     int client_socket;
+
     PCStatus_S_OUT status;
+    bool is_client_connected;
     int last_status_update_time; // UNIX timestamp
+
     std::queue<int> action_queue;
+
+    // Actions that will be sent when client will connect
+    std::vector<std::shared_ptr<Action>> startup_actions;
 };
