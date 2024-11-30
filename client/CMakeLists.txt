@@ -8,6 +8,7 @@ add_executable(client
         run.cpp
         ../include/Actions/ActionSystem.cpp
         ../include/Actions/Action.h
+        ../include/Networking/Networking.h
         ../include/SystemManager/OperatingSystemManager.cpp
         ../include/RequestBuilder/RequestBuilder.h
 )

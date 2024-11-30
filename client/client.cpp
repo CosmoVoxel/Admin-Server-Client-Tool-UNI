@@ -2,8 +2,12 @@
 
 #include <Actions/ActionStructures.h>
 
+#include <SystemManager/OperatingSystemManager.h>
+
 void Client::InitializeConnection()
 {
+
+    GenerateId(true);
     if (WSAStartup(MAKEWORD(2, 2), &wsaData) != 0)
     {
         throw std::runtime_error("WSAStartup failed.");
@@ -23,12 +27,59 @@ void Client::InitializeConnection()
 
 void Client::TryToConnect()
 {
-    while (connect(clientSocket, reinterpret_cast<sockaddr *>(&serverAddr), sizeof(serverAddr)) == SOCKET_ERROR)
+    std::cout << "Connected to the server!\n";
+    while (connect(clientSocket, reinterpret_cast<sockaddr*>(&serverAddr), sizeof(serverAddr)) == SOCKET_ERROR)
     {
         std::cerr << "Connection failed. Retrying...\n";
         std::this_thread::sleep_for(std::chrono::seconds(1));
     }
-    std::cout << "Connected to the server!\n";
+
+    // Send id to server
+    const std::string id_message = "{\"id\":" + std::to_string(id) + "}";
+    std::cout << "Client id: " << id << "\n";
+    switch (SendData(clientSocket, id_message))
+    {
+    case DataSent:
+        std::cout << "ID sent to the server.\n";
+        break;
+    case DataNotSent:
+        TryToConnect();
+        break;
+    case UnknownSentError:
+        TryToConnect();
+        break;
+    };
+
+try_to_receive:
+    std::string buffer(BUFFER_SIZE, '\0');
+    json j;
+    switch (RecvData(clientSocket, buffer, BUFFER_SIZE))
+    {
+    case DataReceived:
+        std::cout << "Received: " << buffer << "\n";
+        j = json::parse(buffer);
+        switch (static_cast<ClientIdErrorType>(j.at("error_type").get<int>()))
+        {
+        case ClientIdErrorType_Incorrect:
+            GenerateId(true);
+            TryToConnect();
+            break;
+        case ClientIdErrorIncorrect:
+            std::cerr << "Error: Incorrect client id\n";
+            break;
+        case ClientIdOk:
+            std::cout << "Client id is correct\n";
+            break;
+        }
+        break;
+    case DataNotReceived:
+        goto try_to_receive;
+
+    case UnknownReceivedError:
+        TryToConnect();
+        break;
+    };
+
 
     receiveThread = std::thread(&Client::WaitingForCommands, this);
 }
@@ -39,7 +90,7 @@ void Client::WaitingForCommands()
     while (true)
     {
         int bytesReceived = recv(clientSocket, buffer, BUFFER_SIZE, 0);
-        if (bytesReceived > 0 && std::strlen(buffer) > 0)
+        if (bytesReceived > 0)
         {
             std::string data(buffer, bytesReceived);
             std::cout << "Client Received: " << data << "\n";
@@ -51,13 +102,13 @@ void Client::WaitingForCommands()
         else if (bytesReceived == SOCKET_ERROR)
         {
             std::cerr << "Connection lost.\n";
-            break;
+            TryToConnect();
         }
     }
 }
 
 
-void Client::DoAction(const std::string &data)
+void Client::DoAction(const std::string& data)
 {
     const nlohmann::json json_data = nlohmann::json::parse(data);
 
@@ -106,4 +157,21 @@ void Client::StopConnection()
     {
         receiveThread.join();
     }
+}
+
+void Client::GenerateId(const bool add_random = true)
+{
+    const std::string cpu_s = OperatingSystemManager::GetClientCPUSerial();
+    const std::string motherboard_s = OperatingSystemManager::GetClientMotherboardSerial();
+    const std::string hdd_s = OperatingSystemManager::GetClientHDDSerial();
+
+    size_t rand_v = 0;
+    if (add_random)
+    {
+        std::random_device rd;
+        std::mt19937 gen(rd());
+        rand_v = std::uniform_int_distribution<int>{0, 1023}(gen);
+    }
+
+    id = std::hash<std::string>{}(cpu_s + motherboard_s + hdd_s) + rand_v;
 }
