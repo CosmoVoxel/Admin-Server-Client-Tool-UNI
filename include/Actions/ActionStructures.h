@@ -42,3 +42,22 @@ struct PCStatus_S_OUT final : public DataStruct
 
     NLOHMANN_DEFINE_TYPE_INTRUSIVE(PCStatus_S_OUT, ip, mac, os);
 };
+
+struct BasicDebugMessageS : public DataStruct
+{
+
+};
+
+enum ClientIdErrorType
+{
+    ClientIdErrorIncorrect = 0,
+    ClientIdErrorType_Incorrect = 1,
+    ClientIdOk = 2,
+};
+
+struct ErrorMessageSendingClientIdS final : public BasicDebugMessageS
+{
+    ClientIdErrorType error_type;
+    NLOHMANN_DEFINE_TYPE_INTRUSIVE(ErrorMessageSendingClientIdS, error_type);
+    explicit ErrorMessageSendingClientIdS(const ClientIdErrorType error_type) : error_type(error_type) {};
+};

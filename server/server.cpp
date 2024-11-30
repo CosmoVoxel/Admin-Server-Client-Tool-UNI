@@ -2,6 +2,8 @@
 
 #include <memory>
 
+#include "Networking/Networking.h"
+
 Server::Server()
 {
     std::cout << "Server initialized.\n";
@@ -53,22 +55,67 @@ void Server::StartServer()
 
     while (isRunning)
     {
+        int client_size = sizeof(clientAddr);
         client_socket = accept(
             server_socket,
             reinterpret_cast<sockaddr*>(&clientAddr),
-            reinterpret_cast<socklen_t*>(&clientAddr));
+            &client_size);
 
         if (client_socket != INVALID_SOCKET)
         {
             std::cout << "Client connected: " << inet_ntoa(clientAddr.sin_addr) << "\n";
 
+
+        trying_to_get_id:
+            std::string buffer(1024, '\0');
+            RecvData(client_socket, buffer, sizeof(buffer));
+
+            size_t client_id = 0;
+            json request = json::parse(buffer);
+
+            if (request.contains("id") && request.at("id").is_number())
+            {
+                client_id = request.at("id");
+            }
+            else
+            {
+                std::cout << "Invalid id. Client must resend their id...\n";
+                SendData(client_socket, ErrorMessageSendingClientIdS{
+                             request.contains("id")
+                                 ? ClientIdErrorIncorrect
+                                 : ClientIdErrorType_Incorrect
+                         });
+                goto trying_to_get_id;
+            }
+
+            SendData(client_socket, ErrorMessageSendingClientIdS{ClientIdOk});
+
+
+            // Try to find the client in the map
+            if (client_threads.contains(client_id))
+            {
+                // If the client is already connected, close the prv connection
+                if (client_threads[client_id].first.is_client_connected)
+                {
+                    std::cout << "Client already connected. Overeating client socket.\n";
+                    closesocket(client_threads[client_id].first.client_socket);
+                }
+
+                // If the client is not connected, update the socket and the connection status
+                client_threads[client_id].first.client_socket = client_socket;
+                client_threads[client_id].first.is_client_connected = true;
+                client_threads[client_id].second = std::thread(&Server::HandleClient, this, client_socket);
+            }
+
             ClientThreadData client_thread_data;
+            client_thread_data.id = client_id;
             client_thread_data.client_socket = client_socket;
             client_thread_data.is_client_connected = true;
 
-            // Insert the client thread
+            // Insert the client thread if new.
             std::thread client_thread_handle(&Server::HandleClient, this, client_socket);
-            client_threads.insert(std::make_pair(client_socket, std::make_pair(client_thread_data, std::move(client_thread_handle))));
+            client_threads.insert(
+                std::make_pair(client_id, std::make_pair(client_thread_data, std::move(client_thread_handle))));
         }
     }
 }
@@ -78,11 +125,11 @@ void Server::EndServer()
     isRunning = false;
 
 
-    for (auto& [client_socket, client_thread] : client_threads)
+    for (auto& thread_data_pair : client_threads | std::views::values)
     {
-        client_thread.first.is_client_connected = false;
-        client_thread.second.join();
-        closesocket(client_socket);
+        thread_data_pair.first.is_client_connected = false;
+        thread_data_pair.second.join();
+        closesocket(thread_data_pair.first.client_socket);
     }
 
 
@@ -136,27 +183,60 @@ void Server::AdminThread(Server* server)
                 break;
             }
         }
-
         try
         {
             if (!input.empty() && std::ranges::all_of(input, isdigit))
             {
                 const int actionIndex = std::stoi(input);
-                const ExecuteActionResult result = send_action_to_client(actionIndex, client_socket);
 
-                switch (result)
+                // Select to send it to all clients or to a specific client.
+                std::cout << "Enter client id or 'all' to send to all clients\n";
+                for (auto& [_, snd] : client_threads)
                 {
-                case ActionExecuted:
-                    std::cout << "Action executed\n";
-                    break;
-                case ActionNotFound:
-                    std::cout << "Action not found\n";
-                    break;
-                case ActionNotSent:
-                    std::cout << "Action not sent\n";
-                    break;
-                default:
-                    break;
+                    std::cout << "Client id: " << snd.first.id << "\n";
+                }
+                std::getline(std::cin, input);
+                if (input == "all")
+                {
+                    for (auto& [_, snd] : client_threads)
+                    {
+                        switch (const ExecuteActionResult result = send_action_to_client(
+                            actionIndex, snd.first.client_socket))
+                        {
+                        case ActionExecuted:
+                            std::cout << "Action executed\n";
+                            break;
+                        case ActionNotFound:
+                            std::cout << "Action not found\n";
+                            break;
+                        case ActionNotSent:
+                            std::cout << "Action not sent\n";
+                            break;
+                        }
+                    }
+                }
+                else
+                {
+                    const size_t client_id = std::stoull(input);
+                    if (!client_threads.contains(client_id))
+                    {
+                        std::cout << "Client not found\n";
+                        continue;
+                    }
+
+                    switch (const ExecuteActionResult result = send_action_to_client(
+                            actionIndex, client_threads[client_id].first.client_socket))
+                    {
+                    case ActionExecuted:
+                        std::cout << "Action executed\n";
+                        break;
+                    case ActionNotFound:
+                        std::cout << "Action not found\n";
+                        break;
+                    case ActionNotSent:
+                        std::cout << "Action not sent\n";
+                        break;
+                    }
                 }
             }
         }
@@ -166,4 +246,46 @@ void Server::AdminThread(Server* server)
             std::cout << "Invalid command\n";
         }
     }
+}
+
+void Server::PrintAllActionsWithIndex(const Actions& actions)
+{
+    for (size_t index = 0; index < actions.size(); ++index)
+    {
+        std::cout << index << ". " << actions[index]->getName() << "\n";
+    }
+}
+
+Server::ExecuteActionResult Server::send_action_to_client(const int action_index, const SOCKET client_socket)
+{
+    if (action_index < 0 || action_index >= action_registry.client_actions.size())
+    {
+        std::cout << "Action not found\n";
+        return ExecuteActionResult::ActionNotFound;
+    }
+
+    Request request;
+    request.InitializeRequest(action_registry.client_actions[action_index]->getName(),
+                              action_registry.client_actions[action_index]->serialize());
+
+    int send_result = 0;
+    int attempts = 0;
+    do
+    {
+        send_result = send(client_socket, request.body.c_str(), static_cast<int>(request.body.size()), 0);
+        if (send_result != SOCKET_ERROR)
+        {
+            break;
+        }
+        attempts++;
+    }
+    while (attempts < 10);
+
+    if (send_result == SOCKET_ERROR)
+    {
+        // The client is not responding. Try again later.
+        return ExecuteActionResult::ActionNotSent;
+    }
+
+    return ExecuteActionResult::ActionExecuted;
 }

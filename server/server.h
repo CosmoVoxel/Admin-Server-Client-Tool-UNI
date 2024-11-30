@@ -44,12 +44,12 @@ protected:
 
     struct ClientThreadData
     {
-        int id;
-        SOCKET client_socket;
+        size_t id{};
+        SOCKET client_socket{};
 
         PCStatus_S_OUT status;
-        bool is_client_connected;
-        int last_status_update_time; // UNIX timestamp
+        bool is_client_connected{};
+        int last_status_update_time{}; // UNIX timestamp
 
         std::queue<int> action_queue;
 
@@ -59,17 +59,11 @@ protected:
         }
 
     };
-    std::map<SOCKET,std::pair<ClientThreadData, std::thread>> client_threads;
+    std::map<size_t,std::pair<ClientThreadData, std::thread>> client_threads;
 
 
     using Actions = std::vector<std::shared_ptr<Action>>;
-    static void PrintAllActionsWithIndex(const Actions& actions)
-    {
-        for (size_t index = 0; index < actions.size(); ++index)
-        {
-            std::cout << index << ". " << actions[index]->getName() << "\n";
-        }
-    };
+    static void PrintAllActionsWithIndex(const Actions& actions);;
 
     enum ExecuteActionResult
     {
@@ -77,32 +71,5 @@ protected:
         ActionExecuted = 0,
         ActionNotSent = 1
     };
-    ExecuteActionResult send_action_to_client(const int action_index, const SOCKET client_socket)
-    {
-        if (action_index < 0 || action_index >= action_registry.client_actions.size())
-        {
-            std::cout << "Action not found\n";
-            return ExecuteActionResult::ActionNotFound;
-        }
-
-        Request request;
-        request.InitializeRequest(action_registry.client_actions[action_index]->getName(), action_registry.client_actions[action_index]->serialize());
-
-        int send_result = 0;
-        int attempts = 0;
-        do
-        {
-            if (attempts >= 10)
-            {
-                // Exit the loop. The client is not responding. Try again later.
-                return ExecuteActionResult::ActionNotSent;
-            }
-            send_result = send(client_socket, request.body.c_str(), static_cast<int>(request.body.size()), 0);
-            attempts++;
-        }
-        while (send_result == SOCKET_ERROR);
-
-        client_threads[client_socket].first.action_queue.push(action_index);
-        return ExecuteActionResult::ActionExecuted;
-    };
+    ExecuteActionResult send_action_to_client(int action_index, SOCKET client_socket);;
 };
