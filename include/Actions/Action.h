@@ -38,6 +38,16 @@ protected:
     }
 };
 
+class IsClientUp final : public BaseAction<IsClientUp_S>
+{
+public:
+    IsClientUp() : BaseAction("IsClientUp", false){}
+protected:
+    IsClientUp_S perform() override
+    {
+        return IsClientUp_S{true};
+    };
+};
 // ------------------------------ Actions Registration ------------------------------ //
 
 //!TODO: Register all actions here
@@ -52,6 +62,11 @@ public:
     Actions client_actions = {
         std::make_shared<RunCommand>(),
         std::make_shared<GetClientStatus>()
+    };
+
+    // Actions that will execute for status update.
+    Actions status_update_actions = {
+        std::make_shared<IsClientUp>()
     };
 };
 

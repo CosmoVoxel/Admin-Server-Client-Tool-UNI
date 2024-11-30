@@ -10,9 +10,9 @@
 
 enum SendDataResult
 {
-    DataSent,
-    DataNotSent,
-    UnknownSentError
+    DataSent = 0,
+    DataNotSent = 1,
+    UnknownSentError = 2
 };
 
 inline SendDataResult SendData(
@@ -44,9 +44,9 @@ inline SendDataResult SendData(
 
 enum RecvDataResult
 {
-    DataReceived,
-    DataNotReceived,
-    UnknownReceivedError
+    DataReceived = 0,
+    DataNotReceived = 1,
+    UnknownReceivedError = 2
 };
 
 inline RecvDataResult RecvData(

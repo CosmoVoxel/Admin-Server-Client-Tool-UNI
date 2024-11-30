@@ -104,7 +104,7 @@ void Server::StartServer()
                 // If the client is not connected, update the socket and the connection status
                 client_threads[client_id].first.client_socket = client_socket;
                 client_threads[client_id].first.is_client_connected = true;
-                client_threads[client_id].second = std::thread(&Server::HandleClient, this, client_socket);
+                client_threads[client_id].second = std::thread(&Server::HandleClient, this);
             }
 
             ClientThreadData client_thread_data;
@@ -113,7 +113,7 @@ void Server::StartServer()
             client_thread_data.is_client_connected = true;
 
             // Insert the client thread if new.
-            std::thread client_thread_handle(&Server::HandleClient, this, client_socket);
+            std::thread client_thread_handle(&Server::HandleClient, this);
             client_threads.insert(
                 std::make_pair(client_id, std::make_pair(client_thread_data, std::move(client_thread_handle))));
         }
@@ -138,25 +138,63 @@ void Server::EndServer()
 }
 
 // -----==== Action Management On Server ====-----
-void Server::HandleClient(const SOCKET clientSocket)
+void Server::HandleClient()
 {
     while (true)
     {
-        char buffer[1024];
-        const int bytesReceived = recv(clientSocket, buffer, sizeof(buffer), 0);
-        if (bytesReceived > 0)
+        std::cout << "Updating client status...\n";
+        std::cout << "Blocking admin thread from parsing the client status...\n";
+        std::lock_guard lock(admin_thread_mutex);
+        for (auto& [id,thread_data_pair] : client_threads)
         {
-            std::string i(buffer, bytesReceived);
-            // Remove the /n /r
-            i.erase(std::ranges::remove_if(i, [](const char c) { return c == '\n' || c == '\r'; }).begin(), i.end());
-
-            std::cout << "Received: " << i << "\n";
-
-            if (json request = json::parse(i); request.contains("result"))
+            for (const auto& action : action_registry.status_update_actions)
             {
-                std::cout << "Result:" << request.at("result") << "\n";
+                std::string buffer(1024, '\0');
+                Request request;
+                json response;
+                request.InitializeRequest(action->getName(), action->serialize());
+                switch (SendData(thread_data_pair.first.client_socket, request.body, request.body.size()))
+                {
+                case DataSent:
+                    std::cout << "Request sent to client with id: " << id << "\n";
+                    break;
+                case DataNotSent:
+                    std::cout << "Request not sent to client with id: " << id << "\n";
+                    break;
+                case UnknownSentError:
+                    std::cout << "Unknown error while sending request to client with id: " << id << "\n";
+                    break;
+                };
+                switch (RecvData(thread_data_pair.first.client_socket, buffer, 1024))
+                {
+                case DataReceived:
+                    std::cout << "Received: " << buffer << "\n";
+                    response = json::parse(buffer);
+                    switch (Request::CompareRequests(request, response))
+                    {
+                    case Request::Ok:
+                        std::cout << "PC status is up\n";
+                        client_threads[id].first.is_pc_up = true;
+                        client_threads[id].first.update_status_time();
+                        break;
+                    case !Request::Ok:
+                        std::cout << "PC status is down\n";
+                        client_threads[id].first.is_pc_up = false;
+                        client_threads[id].first.update_status_time();
+                        break;
+                    default: break;
+                    };
+                    break;
+                case DataNotReceived:
+                    std::cout << "Data not received\n";
+                    break;
+                case UnknownReceivedError:
+                    std::cout << "Unknown error while receiving data\n";
+                    break;
+                };
             }
         }
+        std::this_thread::sleep_for(std::chrono::seconds(30));
     }
 }
 
@@ -188,6 +226,12 @@ void Server::AdminThread(Server* server)
             if (!input.empty() && std::ranges::all_of(input, isdigit))
             {
                 const int actionIndex = std::stoi(input);
+                if (actionIndex < 0 || actionIndex >= action_registry.client_actions.size())
+                {
+                    std::cout << "Action not found\n";
+                    continue;
+                }
+                auto action = action_registry.client_actions[actionIndex];
 
                 // Select to send it to all clients or to a specific client.
                 std::cout << "Enter client id or 'all' to send to all clients\n";
@@ -200,18 +244,37 @@ void Server::AdminThread(Server* server)
                 {
                     for (auto& [_, snd] : client_threads)
                     {
-                        switch (const ExecuteActionResult result = send_action_to_client(
-                            actionIndex, snd.first.client_socket))
+                        // Send the action to the client
+                        Request request;
+                        json response;
+                        std::string buffer(1024, '\0');
+                        request.InitializeRequest(action->getName(), action->serialize());
+                        switch (SendData(snd.first.client_socket, request.body, request.body.size()))
                         {
-                        case ActionExecuted:
-                            std::cout << "Action executed\n";
+                        case DataSent:
+                            std::cout << "Request sent to client with id: " << snd.first.id << "\n";
+                        // Wait for the response
+                            switch (RecvData(snd.first.client_socket, buffer, 1024))
+                            {
+                            case DataReceived:
+                                response = json::parse(buffer);
+                                switch (Request::CompareRequests(request, response))
+                                {
+                                case Request::Ok:
+                                    std::cout << "Received: " << response << "\n";
+                                    break;
+                                default: break;
+                                }
+                                break;
+                            case !DataReceived:
+                                std::cout << "Request not sent to client with id: " << snd.first.id << "\n";
+                                break;
+                            default: break;
+                            }
                             break;
-                        case ActionNotFound:
-                            std::cout << "Action not found\n";
-                            break;
-                        case ActionNotSent:
-                            std::cout << "Action not sent\n";
-                            break;
+                        case !DataSent:
+                            std::cout << "Request not sent to client with id: " << snd.first.id << "\n";
+                        default: break;
                         }
                     }
                 }
@@ -223,19 +286,51 @@ void Server::AdminThread(Server* server)
                         std::cout << "Client not found\n";
                         continue;
                     }
-
-                    switch (const ExecuteActionResult result = send_action_to_client(
-                            actionIndex, client_threads[client_id].first.client_socket))
+                    if (!client_threads[client_id].first.is_client_connected)
                     {
-                    case ActionExecuted:
-                        std::cout << "Action executed\n";
+                        std::cout << "Client is not connected\n";
+                        continue;
+                    }
+                    if (!client_threads[client_id].first.is_pc_up)
+                    {
+                        std::cout << "Client PC is down\n";
+                        continue;
+                    }
+                    auto [fst, _] = std::move(client_threads[client_id]);
+                    Request request;
+                    json response;
+                    std::string buffer(1024, '\0');
+                    request.InitializeRequest(action->getName(), action->serialize());
+                    switch (SendData(fst.client_socket, request.body, request.body.size()))
+                    {
+                    case DataSent:
+                        std::cout << "Request sent to client with id: " << fst.id << "\n";
+                    // Wait for the response
+                        switch (RecvData(fst.client_socket, buffer, 1024))
+                        {
+                        case DataReceived:
+                            response = json::parse(buffer);
+                            switch (Request::CompareRequests(request, response))
+                            {
+                            case Request::Ok:
+                                std::cout << "Rcv data \n";
+                                if (response.contains("data"))
+                                {
+                                    std::cout << response.at("data").dump(4) << "\n";
+                                }
+                                break;
+                            default: break;
+                            }
+                            break;
+                        case !DataReceived:
+                            std::cout << "Request not sent to client with id: " << fst.id << "\n";
+                            break;
+                        default: break;
+                        }
                         break;
-                    case ActionNotFound:
-                        std::cout << "Action not found\n";
-                        break;
-                    case ActionNotSent:
-                        std::cout << "Action not sent\n";
-                        break;
+                    case !DataSent:
+                        std::cout << "Request not sent to client with id: " << fst.id << "\n";
+                    default: break;
                     }
                 }
             }
@@ -254,38 +349,4 @@ void Server::PrintAllActionsWithIndex(const Actions& actions)
     {
         std::cout << index << ". " << actions[index]->getName() << "\n";
     }
-}
-
-Server::ExecuteActionResult Server::send_action_to_client(const int action_index, const SOCKET client_socket)
-{
-    if (action_index < 0 || action_index >= action_registry.client_actions.size())
-    {
-        std::cout << "Action not found\n";
-        return ExecuteActionResult::ActionNotFound;
-    }
-
-    Request request;
-    request.InitializeRequest(action_registry.client_actions[action_index]->getName(),
-                              action_registry.client_actions[action_index]->serialize());
-
-    int send_result = 0;
-    int attempts = 0;
-    do
-    {
-        send_result = send(client_socket, request.body.c_str(), static_cast<int>(request.body.size()), 0);
-        if (send_result != SOCKET_ERROR)
-        {
-            break;
-        }
-        attempts++;
-    }
-    while (attempts < 10);
-
-    if (send_result == SOCKET_ERROR)
-    {
-        // The client is not responding. Try again later.
-        return ExecuteActionResult::ActionNotSent;
-    }
-
-    return ExecuteActionResult::ActionExecuted;
 }

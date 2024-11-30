@@ -32,8 +32,7 @@ public:
 
     void StartServer();
     void EndServer();
-    void HandleClient(SOCKET clientSocket);
-    void UpdateClientStatus(SOCKET clientSocket);
+    void HandleClient();
     void AdminThread(Server* server);
 
 
@@ -41,6 +40,7 @@ public:
 
 protected:
     std::thread adminThread;
+    std::mutex admin_thread_mutex;
 
     struct ClientThreadData
     {
@@ -49,6 +49,7 @@ protected:
 
         PCStatus_S_OUT status;
         bool is_client_connected{};
+        bool is_pc_up{};
         int last_status_update_time{}; // UNIX timestamp
 
         std::queue<int> action_queue;
@@ -64,12 +65,4 @@ protected:
 
     using Actions = std::vector<std::shared_ptr<Action>>;
     static void PrintAllActionsWithIndex(const Actions& actions);;
-
-    enum ExecuteActionResult
-    {
-        ActionNotFound = -1,
-        ActionExecuted = 0,
-        ActionNotSent = 1
-    };
-    ExecuteActionResult send_action_to_client(int action_index, SOCKET client_socket);;
 };

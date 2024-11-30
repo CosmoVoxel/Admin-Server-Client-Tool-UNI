@@ -43,6 +43,14 @@ struct PCStatus_S_OUT final : public DataStruct
     NLOHMANN_DEFINE_TYPE_INTRUSIVE(PCStatus_S_OUT, ip, mac, os);
 };
 
+struct IsClientUp_S final : DataStruct
+{
+    bool is_up;
+    NLOHMANN_DEFINE_TYPE_INTRUSIVE(IsClientUp_S, is_up);
+    explicit IsClientUp_S(const bool is_up) : is_up(is_up) {};
+    explicit IsClientUp_S() = default;
+};
+
 struct BasicDebugMessageS : public DataStruct
 {
 

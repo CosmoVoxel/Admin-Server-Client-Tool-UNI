@@ -27,7 +27,6 @@ void Client::InitializeConnection()
 
 void Client::TryToConnect()
 {
-    std::cout << "Connected to the server!\n";
     while (connect(clientSocket, reinterpret_cast<sockaddr*>(&serverAddr), sizeof(serverAddr)) == SOCKET_ERROR)
     {
         std::cerr << "Connection failed. Retrying...\n";

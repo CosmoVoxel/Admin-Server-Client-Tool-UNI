@@ -38,13 +38,56 @@ public:
 
     static nlohmann::json GetJsonFromRequest(const Request& request);
 
+    enum RequestComparingResultE
+    {
+        NotFoundTransactionId,
+        NotFoundActionIndex,
+        TransactionIdNotInteger,
+        TransactionIdNotEqual,
+        ActionIndexNotEqual,
+        UnknownError,
+        Ok,
+    };
+
+    static RequestComparingResultE CompareRequests(const Request& request,const std::variant<std::string, json> response)
+    {
+        if (std::holds_alternative<json>(response))
+        {
+            const json* response_json = std::get_if<json>(&response);
+
+            if (!response_json->contains("transaction_id"))
+            {
+                return NotFoundTransactionId;
+            }
+            if (!response_json->contains("index"))
+            {
+                return NotFoundActionIndex;
+            }
+
+            if (response_json->at("transaction_id").type() != json::value_t::number_integer)
+            {
+                return TransactionIdNotInteger;
+            }
+            if (response_json->at("transaction_id") != request.transaction_id)
+            {
+                return TransactionIdNotEqual;
+            }
+
+            if (response_json->at("index") != request.action_name)
+            {
+                return ActionIndexNotEqual;
+            }
+            return Ok;
+        }
+        return UnknownError;
+    };
+
     void Encrypt();
     void Decrypt();
 
 public:
     std::string action_name;
     int transaction_id = static_cast<int>(std::chrono::system_clock::now().time_since_epoch().count());
-    // Generate a unique transaction id. :) NOT REALLY
     std::string body;
 };
 
