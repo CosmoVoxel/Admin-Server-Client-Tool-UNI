@@ -8,71 +8,75 @@
 #include <unistd.h>
 #endif
 
-enum SendDataResult
-{
-    DataSent = 0,
-    DataNotSent = 1,
-    UnknownSentError = 2
+enum class DataStatus {
+    DataSent,
+    DataNotSent,
+    DataReceived,
+    DataNotReceived,
+    UnknownSentError,
+    UnknownReceivedError
 };
 
-inline SendDataResult SendData(
+template <typename FlagType = std::atomic<bool>>
+DataStatus SendData(
     const SOCKET socket,
-    const std::variant<std::string,json>&data,
-    const int max_retries = 10,
-    const int wait_time = 3)
+    const std::variant<std::string, json>& data,
+    std::optional<std::shared_ptr<FlagType>> success_flag = std::nullopt,
+    const int max_retries = 5,
+    const int wait_time = 1)
 {
     const auto& actual_data = data.index() == 0 ? std::get<std::string>(data) : std::get<json>(data).dump();
-    try
-    {
-        for (int attempt = 0; attempt < max_retries; ++attempt)
-        {
-            const int bytes_sent = send(socket, actual_data.c_str(), actual_data.size(), 0);
-            if (bytes_sent != SOCKET_ERROR)
-            {
-                return DataSent;
+    try {
+        for (int attempt = 0; attempt < max_retries; ++attempt) {
+            const int bytes_sent = send(socket, actual_data.c_str(), static_cast<int>(actual_data.size()), 0);
+            if (bytes_sent != SOCKET_ERROR) {
+                if (success_flag) success_flag.value()->store(true, std::memory_order_relaxed);
+                return DataStatus::DataSent;
             }
+
+            // Print error and retry
+            std::cout << "Error... Failed to send to socket: " << socket << ". Attempt: " << attempt + 1 << "\n";
+            if (success_flag) success_flag.value()->store(false, std::memory_order_relaxed);
             std::this_thread::sleep_for(std::chrono::seconds(wait_time));
         }
+    } catch (const std::exception&) {
+        if (success_flag) success_flag.value()->store(false, std::memory_order_relaxed);
+        return DataStatus::UnknownSentError;
     }
-    catch (const std::exception&)
-    {
-        return UnknownSentError;
-    }
-    return DataNotSent;
+
+    if (success_flag) success_flag.value()->store(false, std::memory_order_relaxed);
+    return DataStatus::DataNotSent;
 }
 
-
-enum RecvDataResult
-{
-    DataReceived = 0,
-    DataNotReceived = 1,
-    UnknownReceivedError = 2
-};
-
-inline RecvDataResult RecvData(
+template <typename FlagType = std::atomic<bool>>
+DataStatus RecvData(
     const SOCKET socket,
     std::string& data,
+    std::optional<std::shared_ptr<FlagType>> success_flag = std::nullopt,
     const int buffer_size = 1024,
-    const int max_retries = 10,
-    const int wait_time = 3)
+    const int max_retries = 5,
+    const int wait_time = 1)
 {
-    try
-    {
+    try {
         char buffer[buffer_size];
-        for (int attempt = 0; attempt < max_retries; ++attempt)
-        {
+        for (int attempt = 0; attempt < max_retries; ++attempt) {
             const int bytes_received = recv(socket, buffer, buffer_size, 0);
-            if (bytes_received > 0)
-            {
+            if (bytes_received > 0) {
                 data.assign(buffer, bytes_received);
-                return DataReceived;
+                if (success_flag) success_flag.value()->store(true, std::memory_order_relaxed);
+                return DataStatus::DataReceived;
             }
+
+            // Print error and retry
+            std::cout << "Error... Failed to receive from socket: " << socket << ". Attempt: " << attempt + 1 << "\n";
+            if (success_flag) success_flag.value()->store(false, std::memory_order_relaxed);
             std::this_thread::sleep_for(std::chrono::seconds(wait_time));
         }
+    } catch (const std::exception&) {
+        if (success_flag) success_flag.value()->store(false, std::memory_order_relaxed);
+        return DataStatus::UnknownReceivedError;
     }
-    catch (const std::exception&)
-    {
-        return UnknownReceivedError;
-    }
-    return DataNotReceived;
+
+    if (success_flag) success_flag.value()->store(false, std::memory_order_relaxed);
+    return DataStatus::DataNotReceived;
 }

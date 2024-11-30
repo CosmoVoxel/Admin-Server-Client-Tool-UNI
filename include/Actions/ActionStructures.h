@@ -58,9 +58,8 @@ struct BasicDebugMessageS : public DataStruct
 
 enum ClientIdErrorType
 {
-    ClientIdErrorIncorrect = 0,
-    ClientIdErrorType_Incorrect = 1,
-    ClientIdOk = 2,
+    Incorrect = 0,
+    Ok = 1
 };
 
 struct ErrorMessageSendingClientIdS final : public BasicDebugMessageS

@@ -35,6 +35,11 @@ public:
 
 
     void InitializeConnection();
+    std::optional<json> ParseJson(const std::string& buffer);
+    bool AttemptReconnect();
+    bool SendClientId();
+    std::optional<ClientIdErrorType> ProcessServerResponse(const std::string& buffer);
+    void HandleIdError(ClientIdErrorType errorType);
     void TryToConnect();
     void WaitingForCommands();
     void DoAction(const std::string& data);

@@ -42,14 +42,15 @@ public:
     {
         NotFoundTransactionId,
         NotFoundActionIndex,
-        TransactionIdNotInteger,
+        TransactionIdNotUINT,
         TransactionIdNotEqual,
         ActionIndexNotEqual,
         UnknownError,
         Ok,
     };
 
-    static RequestComparingResultE CompareRequests(const Request& request,const std::variant<std::string, json> response)
+    static RequestComparingResultE CompareRequests(const Request& request,
+                                                   const std::variant<std::string, json> response)
     {
         if (std::holds_alternative<json>(response))
         {
@@ -64,9 +65,9 @@ public:
                 return NotFoundActionIndex;
             }
 
-            if (response_json->at("transaction_id").type() != json::value_t::number_integer)
+            if (response_json->at("transaction_id").type() != json::value_t::number_unsigned)
             {
-                return TransactionIdNotInteger;
+                return TransactionIdNotUINT;
             }
             if (response_json->at("transaction_id") != request.transaction_id)
             {
@@ -87,7 +88,8 @@ public:
 
 public:
     std::string action_name;
-    int transaction_id = static_cast<int>(std::chrono::system_clock::now().time_since_epoch().count());
+    std::hash<std::string> hasher;
+    size_t transaction_id = hasher(std::to_string(std::chrono::system_clock::now().time_since_epoch().count()));
     std::string body;
 };
 
