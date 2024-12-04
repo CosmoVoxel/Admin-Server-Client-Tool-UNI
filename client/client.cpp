@@ -51,24 +51,91 @@ bool Client::AttemptReconnect()
     return true;
 }
 
-// Helper: Send client ID to the server
-bool Client::SendClientId()
-{
-    const std::string id_message = "{\"id\":" + std::to_string(id) + "}";
-    std::cout << "Client id: " << id << "\n";
+// Helper: Send client ID to the server.
+bool Client::SendClientId() {
+#ifdef _ADMIN
+    // Send password and login to server with id
+    Request request;
+    request.InitializeRequest("AdminCredential", AdminCredentialS{}, &id);
+    std::string buffer(1024, 0);
+    switch (SendData(server_socket, request.body)) {
+        case DataStatus::DataSent:
+            std::cout << "Admin credentials sent to the server.\n";
+            switch (RecvData(server_socket, buffer)) {
+                case DataStatus::DataReceived: {
+                    const auto errorType = ProcessServerResponse(buffer);
+                    if (errorType.value() == Ok) {
+                        return true;
+                    }
 
-    switch (SendData(clientSocket, id_message))
-    {
-    case DataStatus::DataSent:
-        std::cout << "ID sent to the server.\n";
-        return true;
+                    std::cerr << "Incorrect Admin credentials. Reconnecting...\n";
+                    return false;
+                }
+                case DataStatus::DataNotReceived:
+                    std::cerr << "No data received. Reconnecting...\n";
+                    return false;
+                case DataStatus::UnknownReceivedError:
+                    std::cerr << "Unknown error while receiving data. Reconnecting...\n";
+                    return false;
+                default: break;
+            };
+            return true;
 
-    case DataStatus::DataNotSent:
-    case DataStatus::UnknownSentError:
-        std::cerr << "Failed to send ID. Reconnecting...\n";
-        return AttemptReconnect();
-    default: break;
+        case DataStatus::DataNotSent:
+        case DataStatus::UnknownSentError:
+            std::cerr << "Failed to send Admin credentials. Reconnecting...\n";
+            return AttemptReconnect();
+        default: break;
+    };
+
+#else
+    std::cout << "Client auto gen id: " << id << "\n";
+
+    std::string select_id;
+    std::cout << "Change id? [y,n]: ";
+    std::getline(std::cin, select_id);
+    std::ranges::transform(select_id, select_id.begin(), [](const unsigned char c) { return std::tolower(c); });
+    if (select_id == "y") {
+        std::string id_str;
+        std::cout << "Enter the ID: ";
+        std::getline(std::cin, id_str);
+        id = std::stoull(id_str);
     }
+
+    const std::string id_message = "{\"id\":" + std::to_string(id) + "}";
+
+    std::string buffer(1024, 0);
+    switch (SendData(server_socket, id_message)) {
+        case DataStatus::DataSent:
+            std::cout << id << ":ID sent to the server.\n";
+            switch (RecvData(server_socket, buffer)) {
+                case DataStatus::DataReceived: {
+                    const auto errorType = ProcessServerResponse(buffer);
+                    if (errorType.value() == Ok) {
+                        return true;
+                    }
+
+                    std::cerr << "Incorrect client ID. Reconnecting...\n";
+                    return false;
+                }
+                case DataStatus::DataNotReceived:
+                    std::cerr << "No data received. Reconnecting...\n";
+                    return false;
+                case DataStatus::UnknownReceivedError:
+                    std::cerr << "Unknown error while receiving data. Reconnecting...\n";
+                    return false;
+                default: break;
+            };
+
+            return true;
+
+        case DataStatus::DataNotSent:
+        case DataStatus::UnknownSentError:
+            std::cerr << "Failed to send ID. Reconnecting...\n";
+            return AttemptReconnect();
+        default: break;
+    }
+#endif
 
     return false;
 }
