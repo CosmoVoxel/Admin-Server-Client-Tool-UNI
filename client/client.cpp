@@ -1,50 +1,43 @@
 #include "client.h"
 
 #include <Actions/ActionStructures.h>
-
 #include <SystemManager/OperatingSystemManager.h>
 
-void Client::InitializeConnection()
-{
+#include "RequestBuilder/RequestBuilder.h"
+
+void Client::InitializeConnection() {
     GenerateId(true);
-    if (WSAStartup(MAKEWORD(2, 2), &wsaData) != 0)
-    {
+#ifdef _WIN32
+    if (WSAStartup(MAKEWORD(2, 2), &wsaData) != 0) {
         throw std::runtime_error("WSAStartup failed.");
     }
+#endif
 
-    clientSocket = socket(AF_INET, SOCK_STREAM, 0);
-    if (clientSocket == INVALID_SOCKET)
-    {
+    server_socket = socket(AF_INET, SOCK_STREAM, 0);
+    if (server_socket == INVALID_SOCKET) {
         WSACleanup();
         throw std::runtime_error("Socket creation failed.");
     }
 
-    serverAddr.sin_family = AF_INET;
-    serverAddr.sin_port = htons(PORT);
-    inet_pton(AF_INET, "127.0.0.1", &serverAddr.sin_addr);
+    server_addr.sin_family = AF_INET;
+    server_addr.sin_port = htons(PORT);
+    inet_pton(AF_INET, "127.0.0.1", &server_addr.sin_addr);
 }
-
 
 // ----------------------------------========Helper Functions========---------------------------------- //
 // Helper: Parse JSON from received buffer
-std::optional<json> Client::ParseJson(const std::string& buffer)
-{
-    try
-    {
+std::optional<json> Client::ParseJson(const std::string &buffer) {
+    try {
         return json::parse(buffer);
-    }
-    catch (const json::parse_error&)
-    {
+    } catch (const json::parse_error &) {
         std::cerr << "Error parsing JSON response.\n";
         return std::nullopt;
     }
 }
 
 // Helper: Attempt to reconnect
-bool Client::AttemptReconnect()
-{
-    while (connect(clientSocket, reinterpret_cast<sockaddr*>(&serverAddr), sizeof(serverAddr)) == SOCKET_ERROR)
-    {
+bool Client::AttemptReconnect() {
+    while (connect(server_socket, reinterpret_cast<sockaddr *>(&server_addr), sizeof(server_addr)) == SOCKET_ERROR) {
         std::cerr << "Connection failed. Retrying...\n";
         std::this_thread::sleep_for(std::chrono::seconds(1));
     }
@@ -77,7 +70,8 @@ bool Client::SendClientId() {
                 case DataStatus::UnknownReceivedError:
                     std::cerr << "Unknown error while receiving data. Reconnecting...\n";
                     return false;
-                default: break;
+                default:
+                    std::cerr << "Unknown error while receiving data. Reconnecting...\n";
             };
             return true;
 
@@ -141,133 +135,110 @@ bool Client::SendClientId() {
 }
 
 // Helper: Process the server response
-std::optional<ClientIdErrorType> Client::ProcessServerResponse(const std::string& buffer)
-{
+std::optional<ClientIdErrorType> Client::ProcessServerResponse(const std::string &buffer) {
     auto parsed_json = ParseJson(buffer);
-    if (!parsed_json)
-    {
+    if (!parsed_json) {
         return std::nullopt;
     }
 
-    try
-    {
+    try {
         int error_type = parsed_json->at("error_type").get<int>();
         return static_cast<ClientIdErrorType>(error_type);
-    }
-    catch (const json::out_of_range&)
-    {
+    } catch (const json::out_of_range &) {
         std::cerr << "Invalid response from server.\n";
         return std::nullopt;
     }
 }
 
 // Helper: Handle server ID error response
-void Client::HandleIdError(const ClientIdErrorType errorType)
-{
-    switch (errorType)
-    {
-    case Incorrect:
-        std::cerr << "Server indicated incorrect client ID. Regenerating ID...\n";
-        GenerateId(true); // Assume this is a member function to regenerate the ID
-        TryToConnect();
-        break;
+void Client::HandleIdError(const ClientIdErrorType errorType) {
+    switch (errorType) {
+        case Incorrect:
+            std::cerr << "Server indicated incorrect client ID. Regenerating ID...\n";
+            GenerateId(true); // Assume this is a member function to regenerate the ID
+            break;
 
-    case Ok:
-        std::cout << "Client ID is correct.\n";
-        break;
+        case Ok:
+            std::cout << "Client ID is correct.\n";
+            break;
     }
 }
 
 // Main connection function
-void Client::TryToConnect()
-{
-    if (!AttemptReconnect())
-    {
-        return;
+void Client::TryToConnect() {
+    bool is_info_send = false;
+
+    while (!is_info_send) {
+        AttemptReconnect();
+
+        // Try to send the client ID
+        if (SendClientId()) {
+            is_info_send = true;
+        }
     }
 
-    if (!SendClientId())
-    {
-        return;
-    }
+    bool is_connected = false;
 
-    while (true)
-    {
+    while (!is_connected) {
         std::string buffer(1024, '\0');
 
-        switch (RecvData(clientSocket, buffer))
-        {
-        case DataStatus::DataReceived:
-            {
+        switch (RecvData(server_socket, buffer)) {
+            case DataStatus::DataReceived: {
                 std::cout << "Received: " << buffer << "\n";
                 const auto errorType = ProcessServerResponse(buffer);
 
-                if (errorType)
-                {
+                if (errorType) {
                     HandleIdError(errorType.value());
                 }
-                return; // Exit loop after successful response
+                is_connected = true;
             }
 
-        case DataStatus::DataNotReceived:
-            std::cerr << "No data received. Retrying...\n";
-            std::this_thread::sleep_for(std::chrono::milliseconds(500));
-            break;
+            case DataStatus::DataNotReceived:
+                std::cerr << "No data received. Retrying...\n";
+                std::this_thread::sleep_for(std::chrono::milliseconds(500));
+                break;
 
-        case DataStatus::UnknownReceivedError:
-            std::cerr << "Unknown error while receiving data. Reconnecting...\n";
-            if (!AttemptReconnect())
-            {
-                return;
-            }
-            break;
-        default: break;
+            case DataStatus::UnknownReceivedError:
+                std::cerr << "Unknown error while receiving data. Reconnecting...\n";
+                if (!AttemptReconnect()) {
+                    is_connected = true;
+                }
+                break;
+            default: break;
         }
     }
 
     receiveThread = std::thread(&Client::WaitingForCommands, this);
 }
 
-
 // This function will be used for handling messages from the server...
-void Client::WaitingForCommands()
-{
-    while (true)
-    {
-        int bytesReceived = recv(clientSocket, buffer, BUFFER_SIZE, 0);
-        if (bytesReceived > 0)
-        {
+void Client::WaitingForCommands() {
+    while (true) {
+        const int bytesReceived = recv(server_socket, buffer, BUFFER_SIZE, 0);
+        if (bytesReceived > 0) {
             std::string data(buffer, bytesReceived);
             std::cout << "Client Received: " << data << "\n";
             DoAction(data);
-            ZeroMemory(buffer, BUFFER_SIZE);
-            bytesReceived = 0;
-        }
-
-        else if (bytesReceived == SOCKET_ERROR)
-        {
+            memset(buffer, 0, BUFFER_SIZE);
+        } else if (bytesReceived == SOCKET_ERROR) {
             std::cerr << "Connection lost.\n";
             TryToConnect();
         }
     }
 }
 
-void Client::DoAction(const std::string& data)
-{
+void Client::DoAction(const std::string &data) {
     const nlohmann::json json_data = nlohmann::json::parse(data);
 
-    if (json_data.empty())
-    {
+    if (json_data.empty()) {
         std::cerr << "Error: Invalid JSON data\n";
         return;
     }
-    if (!json_data.contains("index"))
-    {
+    if (!json_data.contains("index")) {
         std::cerr << "Error: Invalid JSON data\n";
         return;
     }
-    if (!json_data.contains("transaction_id"))
-    {
+    if (!json_data.contains("transaction_id")) {
         std::cerr << "Error: Invalid JSON data\n";
         return;
     }
@@ -278,40 +249,24 @@ void Client::DoAction(const std::string& data)
     result["transaction_id"] = json_data.at("transaction_id");
     result["index"] = json_data.at("index");
 
-
-    std::string message;
-    if (result.empty())
-    {
-        message = "Error: Invalid action";
-    }
-    else
-    {
-        // Convert result to string
-        message = result.dump();
-    }
-
-    send(clientSocket, message.c_str(), message.size(), 0);
+    SendData(server_socket, result);
 }
 
-void Client::StopConnection()
-{
-    closesocket(clientSocket);
+void Client::StopConnection() {
+    closesocket(server_socket);
     WSACleanup();
-    if (receiveThread.joinable())
-    {
+    if (receiveThread.joinable()) {
         receiveThread.join();
     }
 }
 
-void Client::GenerateId(const bool add_random = true)
-{
+void Client::GenerateId(const bool add_random = true) {
     const std::string cpu_s = OperatingSystemManager::GetClientCPUSerial();
     const std::string motherboard_s = OperatingSystemManager::GetClientMotherboardSerial();
     const std::string hdd_s = OperatingSystemManager::GetClientHDDSerial();
 
     size_t rand_v = 0;
-    if (add_random)
-    {
+    if (add_random) {
         std::random_device rd;
         std::mt19937 gen(rd());
         rand_v = std::uniform_int_distribution<int>{0, 1023}(gen);

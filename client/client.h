@@ -1,15 +1,8 @@
 #pragma once
 #include <thread>
 #include <random>
-#include <winsock2.h>
-#include <ws2tcpip.h>
 
 #include <Actions/ActionSystem.h>
-
-#include <bits/random.h>
-
-#pragma comment(lib, "ws2_32.lib")
-
 #include <Networking/Networking.h>
 
 
@@ -20,29 +13,43 @@ public:
     static constexpr int PORT = 54000;
     static constexpr int BUFFER_SIZE = 1024;
 
+#if _WIN32
     WSADATA wsaData{};
-    sockaddr_in serverAddr{};
+#endif
+
+    sockaddr_in server_addr{};
+    SOCKET server_socket{};
+
     char buffer[BUFFER_SIZE]{};
-    SOCKET clientSocket{};
+
     std::thread receiveThread;
     std::thread thread_send;
-
-    size_t id;
 
     // Actions
     ActionFactory actionFactory{};
     ActionManager actionManager{actionFactory};
 
+    size_t id = 0;
 
     void InitializeConnection();
-    std::optional<json> ParseJson(const std::string& buffer);
+
+    std::optional<json> ParseJson(const std::string &buffer);
+
     bool AttemptReconnect();
+
     bool SendClientId();
-    std::optional<ClientIdErrorType> ProcessServerResponse(const std::string& buffer);
+
+    std::optional<ClientIdErrorType> ProcessServerResponse(const std::string &buffer);
+
     void HandleIdError(ClientIdErrorType errorType);
+
     void TryToConnect();
+
     void WaitingForCommands();
-    void DoAction(const std::string& data);
+
+    void DoAction(const std::string &data);
+
     void StopConnection();
+
     void GenerateId(bool add_random);
 };

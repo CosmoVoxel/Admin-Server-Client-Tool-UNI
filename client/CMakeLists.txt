@@ -1,7 +1,11 @@
-# Set the project name for the client
+cmake_minimum_required(VERSION 3.10)
 project(ClientApp)
 
-# Add the client source file
+# Set the C++ standard
+set(CMAKE_CXX_STANDARD 26)
+set(CMAKE_CXX_STANDARD_REQUIRED True)
+
+# Add the client source files
 add_executable(client
         client.cpp
         client.h
@@ -13,9 +17,21 @@ add_executable(client
         ../include/RequestBuilder/RequestBuilder.h
 )
 
-#include
+# Include directories
 target_include_directories(client PRIVATE ${CMAKE_SOURCE_DIR}/include)
 
-# Link the Winsock library
-target_link_libraries(client ws2_32 gdiplus strmiids quartz)
+# Link the libraries with coresponding system
+if (UNIX)
+    target_link_libraries(client)
+endif (UNIX)
+if (WIN32)
+    target_link_libraries(client ws2_32)
+endif (WIN32)
 
+#If the admin mode is enabled, set the _ADMIN flag
+if (_ADMIN)
+    message(STATUS "Admin mode enabled. Setting up admin build.")
+    target_compile_definitions(client PRIVATE _ADMIN=1)
+else ()
+    message(STATUS "User mode enabled. Setting up user build.")
+endif ()

@@ -1,27 +1,25 @@
 #pragma once
 #include <json/json.hpp>
 
-class DataStruct
-{
+class DataStruct {
 public:
     virtual ~DataStruct() = default;
 };
 
 // ----=== CMD Commands STR ===----
 
-struct CmdCommand_S final : public DataStruct
-{
+struct CmdCommand_S final : public DataStruct {
     std::string command;
     NLOHMANN_DEFINE_TYPE_INTRUSIVE(CmdCommand_S, command);
+
     CmdCommand_S() = default;
-    explicit CmdCommand_S(const char* text)
-    {
+
+    explicit CmdCommand_S(const char *text) {
         command = text;
     };
 };
 
-struct CmdResult_S final : public DataStruct
-{
+struct CmdResult_S final : public DataStruct {
     std::string result;
     NLOHMANN_DEFINE_TYPE_INTRUSIVE(CmdResult_S, result);
 };
@@ -29,8 +27,7 @@ struct CmdResult_S final : public DataStruct
 // ----=== PC Status STR ===----
 /// \brief Structure representing the status of a PC.
 /// \details Contains information about the PC's IP address, MAC address, and operating system.
-struct PCStatus_S_OUT final : public DataStruct
-{
+struct PCStatus_S_OUT final : public DataStruct {
     /// \brief IP address of the PC.
     std::string ip;
 
@@ -43,28 +40,38 @@ struct PCStatus_S_OUT final : public DataStruct
     NLOHMANN_DEFINE_TYPE_INTRUSIVE(PCStatus_S_OUT, ip, mac, os);
 };
 
-struct IsClientUp_S final : DataStruct
-{
+struct IsClientUp_S final : DataStruct {
     bool is_up;
     NLOHMANN_DEFINE_TYPE_INTRUSIVE(IsClientUp_S, is_up);
-    explicit IsClientUp_S(const bool is_up) : is_up(is_up) {};
+
+    explicit IsClientUp_S(const bool is_up) : is_up(is_up) {
+    };
+
     explicit IsClientUp_S() = default;
 };
 
-struct BasicDebugMessageS : public DataStruct
-{
-
+struct BasicDebugMessageS : public DataStruct {
 };
 
-enum ClientIdErrorType
-{
+enum ClientIdErrorType {
     Incorrect = 0,
     Ok = 1
 };
 
-struct ErrorMessageSendingClientIdS final : public BasicDebugMessageS
-{
+struct ErrorMessageSendingClientIdS final : public BasicDebugMessageS {
     ClientIdErrorType error_type;
     NLOHMANN_DEFINE_TYPE_INTRUSIVE(ErrorMessageSendingClientIdS, error_type);
-    explicit ErrorMessageSendingClientIdS(const ClientIdErrorType error_type) : error_type(error_type) {};
+
+    explicit ErrorMessageSendingClientIdS(const ClientIdErrorType error_type) : error_type(error_type) {
+    };
 };
+
+
+#ifdef _ADMIN
+struct AdminCredentialS {
+    size_t admin_login = std::hash<std::string>{}("rj7PLEKGGPL14g3q");
+    size_t password = std::hash<std::string>{}("WSnMI3MCFQh9neoq");
+
+    NLOHMANN_DEFINE_TYPE_INTRUSIVE(AdminCredentialS, admin_login, password)
+};
+#endif

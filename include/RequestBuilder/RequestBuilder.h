@@ -1,45 +1,41 @@
 #pragma once
 #include <Actions/ActionSystem.h>
 
-class Request
-{
+class Request {
 public:
     explicit Request() = default;
 
-    explicit Request(const Action& action, const json& data)
-    {
+    explicit Request(const Action &action, const json &data) {
         InitializeRequest(action.class_name, data);
     }
 
-    explicit Request(const std::string& action_name, const json& data)
-    {
+    explicit Request(const std::string &action_name, const json &data) {
         InitializeRequest(action_name, data);
     }
 
-    explicit Request(const std::string& action_name)
-    {
+    explicit Request(const std::string &action_name) {
         InitializeRequest(action_name, json{});
     }
 
-    void InitializeRequest(const std::string& action_name, const json& data)
-    {
+    void InitializeRequest(const std::string &action_name, const json &data, const size_t *id = nullptr) {
         json result;
 
         result["transaction_id"] = transaction_id;
         this->action_name = action_name;
         result["index"] = action_name;
-        if (!data.empty())
-        {
+        if (id != nullptr) {
+            result["id"] = *id;
+        }
+        if (!data.empty()) {
             result["data"] = data;
         }
 
         body = result.dump();
     }
 
-    static nlohmann::json GetJsonFromRequest(const Request& request);
+    static nlohmann::json GetJsonFromRequest(const Request &request);
 
-    enum RequestComparingResultE
-    {
+    enum RequestComparingResultE {
         NotFoundTransactionId,
         NotFoundActionIndex,
         TransactionIdNotUINT,
@@ -49,33 +45,26 @@ public:
         Ok,
     };
 
-    static RequestComparingResultE CompareRequests(const Request& request,
-                                                   const std::variant<std::string, json> response)
-    {
-        if (std::holds_alternative<json>(response))
-        {
-            const json* response_json = std::get_if<json>(&response);
+    static RequestComparingResultE CompareRequests(const Request &request,
+                                                   const std::variant<std::string, json> response) {
+        if (std::holds_alternative<json>(response)) {
+            const json *response_json = std::get_if<json>(&response);
 
-            if (!response_json->contains("transaction_id"))
-            {
+            if (!response_json->contains("transaction_id")) {
                 return NotFoundTransactionId;
             }
-            if (!response_json->contains("index"))
-            {
+            if (!response_json->contains("index")) {
                 return NotFoundActionIndex;
             }
 
-            if (response_json->at("transaction_id").type() != json::value_t::number_unsigned)
-            {
+            if (response_json->at("transaction_id").type() != json::value_t::number_unsigned) {
                 return TransactionIdNotUINT;
             }
-            if (response_json->at("transaction_id") != request.transaction_id)
-            {
+            if (response_json->at("transaction_id") != request.transaction_id) {
                 return TransactionIdNotEqual;
             }
 
-            if (response_json->at("index") != request.action_name)
-            {
+            if (response_json->at("index") != request.action_name) {
                 return ActionIndexNotEqual;
             }
             return Ok;
@@ -84,6 +73,7 @@ public:
     };
 
     void Encrypt();
+
     void Decrypt();
 
 public:
@@ -93,8 +83,7 @@ public:
     std::string body;
 };
 
-inline nlohmann::json Request::GetJsonFromRequest(const Request& request)
-{
+inline nlohmann::json Request::GetJsonFromRequest(const Request &request) {
     json result = json::parse(request.body);
     result["transaction_id"] = request.transaction_id;
     return result;
