@@ -10,6 +10,7 @@ The project is organized into several directories, each serving a specific purpo
 
 - `OSPlaygroundCode/`: Contains code related to the operating system playground.
 - `client/`: Includes the client-side implementation.
+- `server/`: Includes the server-side implementation.
 - `include/`: Houses various header files and modules.
   - `Actions/`: Contains action-related headers.
   - `Networking/`: Networking-related headers.
@@ -21,10 +22,6 @@ The project is organized into several directories, each serving a specific purpo
 ### OSPlaygroundCode
 
 This directory includes the codebase for experimenting with various OS-level functionalities. It serves as a playground for testing and developing new features.
-
-### Client
-
-The `client` directory contains the client-side implementation of the tool. It is responsible for interfacing with the server, handling client requests, and managing client-specific tasks.
 
 ### Include
 
